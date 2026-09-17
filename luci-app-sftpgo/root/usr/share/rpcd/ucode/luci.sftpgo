@@ -1,0 +1,88 @@
+#!/usr/bin/ucode
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+'use strict';
+
+import { access, error, popen, readfile, unlink } from 'fs';
+import { cursor } from 'uci';
+
+function get_config_dir() {
+	const ctx = cursor();
+	let dir = ctx.get('sftpgo', 'config', 'config_dir');
+	return dir || '/etc/sftpgo';
+}
+
+function get_current_version() {
+	if (!access('/usr/bin/sftpgo'))
+		return null;
+
+	const fd = popen('/usr/bin/sftpgo -v');
+	if (fd) {
+		let out = fd.read('all');
+		fd.close();
+
+		if (!out || length(out) === 0)
+			return null;
+
+		try {
+			out = trim(out);
+			// 输出形如 "SFTPGo x.y.z-...."，取版本号片段
+			let m = match(out, /[0-9]+\.[0-9]+\.[0-9]+[^\s]*/);
+			return m ? m[0] : out;
+		} catch (e) {
+			return out;
+		}
+	}
+	return null;
+}
+
+const methods = {
+	get_ver: {
+		call: function () {
+			let v = get_current_version();
+			if (!v)
+				return { ver: {}, error: 'sftpgo not found or version check failed' };
+			return { ver: { version: v } };
+		}
+	},
+
+	get_admin_creds: {
+		call: function () {
+			const path = get_config_dir() + '/.initial_admin_credentials';
+			if (!access(path))
+				return { exists: false };
+
+			const content = readfile(path);
+			if (!content)
+				return { exists: false };
+
+			let username = null, password = null;
+			for (let line in split(content, '\n')) {
+				let m = match(line, /^username:\s*(.+)$/);
+				if (m) username = trim(m[1]);
+				m = match(line, /^password:\s*(.+)$/);
+				if (m) password = trim(m[1]);
+			}
+
+			if (!username || !password)
+				return { exists: false };
+
+			return { exists: true, username: username, password: password };
+		}
+	},
+
+	clear_admin_creds: {
+		call: function () {
+			const path = get_config_dir() + '/.initial_admin_credentials';
+			if (access(path)) {
+				if (!unlink(path))
+					return { cleared: false, error: 'failed to remove file' };
+			}
+			return { cleared: true };
+		}
+	}
+};
+
+return { 'luci.sftpgo': methods };
