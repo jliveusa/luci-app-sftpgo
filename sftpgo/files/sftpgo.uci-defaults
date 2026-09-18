@@ -1,7 +1,0 @@
-#!/bin/sh
-# 首次安装时创建运行所需目录并赋权，用户/组由 opkg (USERID) 在安装阶段创建。
-
-mkdir -p /etc/sftpgo /srv/sftpgo/data /srv/sftpgo/backups /var/log/sftpgo
-chown -R sftpgo:sftpgo /etc/sftpgo /srv/sftpgo /var/log/sftpgo 2>/dev/null
-
-exit 0
