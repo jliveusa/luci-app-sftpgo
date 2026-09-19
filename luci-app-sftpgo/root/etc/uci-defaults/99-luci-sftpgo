@@ -1,8 +1,0 @@
-#!/bin/sh
-
-chmod +x /usr/share/rpcd/ucode/luci.sftpgo
-chown root:www-data /usr/libexec/sftpgo-call
-chmod 750 /usr/libexec/sftpgo-call
-rm -f /tmp/luci-indexcache
-/etc/init.d/rpcd restart
-exit 0
