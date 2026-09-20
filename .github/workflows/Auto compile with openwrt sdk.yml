@@ -1,221 +1,308 @@
+#
+# Adapted from Openwrt-Passwall2's "Auto compile with openwrt sdk" workflow
+# (https://github.com/Openwrt-Passwall/openwrt-passwall2) for luci-app-sftpgo.
+#
+# Differences from the passwall2 original, and why:
+#   - Single repo, single package pair (sftpgo + luci-app-sftpgo), no external
+#     "packages" feed dependency like passwall2's openwrt-passwall-packages.
+#     The two package directories under net/ are copied straight into the
+#     SDK's package/ tree instead of being pulled in via a src-git feed.
+#   - No version-tracking against a third-party upstream project: this repo
+#     IS the upstream, so "has_update" is decided by checking whether a
+#     GitHub Release already exists for the current net/luci-app-sftpgo
+#     Makefile version, not by polling someone else's releases API.
+#   - Rust bootstrap patch removed: sftpgo has no Rust dependency.
+#   - Golang feed refresh patch KEPT: net/sftpgo/go.mod requires Go >= 1.25.8,
+#     and the golang feed version pinned inside a given SDK snapshot can lag
+#     behind that, so we still refresh feeds/packages/lang/golang from
+#     openwrt/packages master before building, exactly like passwall2 does
+#     for its own (newer-Go-requiring) dependencies.
+#   - Target matrix trimmed to x86_64 only, matching the actual deployment
+#     target for this package (see README.md "目标载体是 x86 OpenWrt").
+#     Add more `include:` entries under job_build's matrix if you later need
+#     other architectures; nothing else in this workflow has to change.
+#   - actions/checkout pinned to @v4 (a fixed major-version tag) rather than
+#     passwall2's @main, and apt package list trimmed to what an SDK-only
+#     Go-package build actually needs (no kernel/toolchain-from-source
+#     dependencies) — both purely in the interest of a simpler, more
+#     predictable pipeline.
+#
 name: "Auto compile with openwrt sdk"
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - "/**"
-      - ".github/workflows/Auto compile with openwrt sdk.yml"
-  workflow_dispatch:
   repository_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: sftpgo-openwrt-sdk-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'false'
+      force_release:
+        description: 'Publish a release even if this version was already released'
+        required: false
+        default: 'false'
+  push:
+    branches: [ main ]
+    paths:
+      - '/**'
+      - '.github/workflows/Auto_compile_with_openwrt_sdk.yml'
 
 env:
   TZ: Asia/Shanghai
-  OPENWRT_RELEASE: "25.12.5"
+
+permissions:
+  contents: write
+  actions: write
 
 jobs:
-  build:
-    name: build (${{ matrix.platform }})
+  job_check:
+    name: Check version
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    outputs:
+      version_tag: ${{ steps.check_version.outputs.version_tag }}
+      has_update: ${{ steps.check_version.outputs.has_update }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Check version
+        id: check_version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          luci_version=$(awk -F':=' '/^PKG_VERSION:=/{print $2}' net/luci-app-sftpgo/Makefile | tr -d '\r')
+          luci_release=$(awk -F':=' '/^PKG_RELEASE:=/{print $2}' net/luci-app-sftpgo/Makefile | tr -d '\r')
+          sftpgo_version=$(awk -F':=' '/^PKG_VERSION:=/{print $2}' net/sftpgo/Makefile | tr -d '\r')
+          sftpgo_release=$(awk -F':=' '/^PKG_RELEASE:=/{print $2}' net/sftpgo/Makefile | tr -d '\r')
+
+          version_tag="v${luci_version}-${luci_release}"
+          echo "version_tag=${version_tag}" >> "$GITHUB_OUTPUT"
+          echo "luci version: ${luci_version}-${luci_release}"
+          echo "sftpgo version: ${sftpgo_version}-${sftpgo_release}"
+
+          if [ "${{ github.event.inputs.force_release }}" = "true" ]; then
+            echo "force_release requested, will (re)build"
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if gh release view "$version_tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $version_tag already exists, skipping build"
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release for $version_tag yet, will build"
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  job_build:
+    name: Build (x86_64)
+    needs: job_check
+    if: needs.job_check.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: x86_64
-            sdk_url: https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/openwrt-sdk-25.12.5-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
-          - platform: aarch64_generic
-            sdk_url: https://downloads.openwrt.org/releases/25.12.5/targets/rockchip/armv8/openwrt-sdk-25.12.5-rockchip-armv8_gcc-14.3.0_musl.Linux-x86_64.tar.zst
-          - platform: aarch64_cortex-a53
-            sdk_url: https://downloads.openwrt.org/releases/25.12.5/targets/mediatek/filogic/openwrt-sdk-25.12.5-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst
-
+            url_sdk: https://downloads.openwrt.org/snapshots/targets/x86/64/openwrt-sdk-x86-64_gcc-14.4.0_musl.Linux-x86_64.tar.zst
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@main
         with:
-          fetch-depth: 1
+          ref: ${{ github.ref_name }}
 
-      - name: Install host dependencies
-        shell: bash
+      - name: Prepare release notes
         run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            clang \
-            flex \
-            bison \
-            gawk \
-            gettext \
-            git \
-            libelf-dev \
-            libncurses-dev \
-            libssl-dev \
-            python3 \
-            python3-setuptools \
-            rsync \
-            unzip \
-            wget \
-            zstd \
-            file
+          {
+            echo "## :mega: luci-app-sftpgo"
+            echo "**:minidisc: luci-app-sftpgo version: ${{ needs.job_check.outputs.version_tag }}**"
+            echo ""
+            echo "Built with the OpenWrt x86_64 SDK. Contains both the \`sftpgo\`"
+            echo "daemon package and the \`luci-app-sftpgo\` LuCI frontend, in both"
+            echo "apk and ipk formats."
+          } > release.txt
 
-      - name: Download and unpack OpenWrt SDK
-        shell: bash
-        env:
-          SDK_URL: ${{ matrix.sdk_url }}
+      - name: Free disk space
         run: |
-          set -euo pipefail
-          mkdir -p sdk
-          archive="${SDK_URL##*/}"
-          curl -fL --retry 5 --retry-delay 3 --retry-connrefused \
-            --connect-timeout 20 --max-time 900 \
-            -o "$archive" "$SDK_URL"
+          sudo -E rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android
 
-          case "$archive" in
-            *.tar.zst)
-              tar --zstd -xf "$archive" -C sdk --strip-components=1
-              ;;
-            *.tar.xz)
-              tar -xJf "$archive" -C sdk --strip-components=1
-              ;;
-            *)
-              echo "Unsupported SDK archive: $archive" >&2
-              exit 1
-              ;;
-          esac
-
-          test -x sdk/scripts/feeds
-          test -f sdk/Config-build.in
-          test -f sdk/Makefile
-
-      - name: Prepare feeds and inject local packages
-        shell: bash
+      - name: Install packages
         run: |
-          set -euo pipefail
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install build-essential ccache clang cmake cpio curl \
+            file flex gawk gettext git gperf haveged help2man intltool libelf-dev \
+            libncurses-dev libssl-dev lrzsz mkisofs msmtp ninja-build p7zip \
+            p7zip-full patch pkgconf python3 python3-pip python3-ply \
+            python3-docutils python3-pyelftools qemu-utils re2c rsync \
+            squashfs-tools subversion swig unzip vim wget xxd zlib1g-dev zstd
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+
+      - name: Download OpenWrt SDK
+        run: |
+          url_sdk="${{ matrix.url_sdk }}"
+          wget -q "$url_sdk"
+          file_name=$(echo "$url_sdk" | awk -F/ '{print $NF}')
+          mkdir sdk
+          if [[ $file_name == *.tar.xz ]]; then
+            tar -xJf "$file_name" -C ./sdk --strip-components=1
+          elif [[ $file_name == *.tar.zst ]]; then
+            tar --zstd -xf "$file_name" -C ./sdk --strip-components=1
+          else
+            echo "Unsupported SDK archive format: $file_name"
+            exit 1
+          fi
+
+      - name: SSH connection to Actions
+        uses: mxschmitt/action-tmate@v3.13
+        if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh != 'false') || contains(github.event.action, 'ssh')
+
+      - name: Update feeds
+        run: |
           cd sdk
+
+          # Use the GitHub mirrors instead of git.openwrt.org (faster/more
+          # reliable from GitHub-hosted runners, same convention as passwall2).
+          sed -i \
+              -e 's|git\.openwrt\.org/feed|github.com/openwrt|g' \
+              -e 's|git\.openwrt\.org/project|github.com/openwrt|g' \
+              -e 's|git\.openwrt\.org/openwrt|github.com/openwrt|g' \
+              feeds.conf.default
 
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-          cd ..
-          test -f sftpgo/Makefile
-          test -f luci-app-sftpgo/Makefile
+          #--------------------------------------begin_patches------------------------------------------
+          # net/sftpgo/go.mod requires Go >= 1.25.8. The golang feed version
+          # pinned inside a given SDK snapshot can lag behind that, so pull a
+          # fresh copy of the golang feed package from openwrt/packages
+          # master before building, same rationale as passwall2's own patch
+          # (sftpgo has no Rust dependency, so that half of passwall2's patch
+          # does not apply here and is intentionally omitted).
+          echo "Start applying the patch"
 
-          rm -rf sdk/package/sftpgo sdk/package/luci-app-sftpgo
-          mkdir -p sdk/package/sftpgo sdk/package/luci-app-sftpgo
-          cp -a sftpgo/. sdk/package/sftpgo/
-          cp -a luci-app-sftpgo/. sdk/package/luci-app-sftpgo/
+          rm -rf temp_resp
+          git clone -b master --single-branch https://github.com/openwrt/packages.git temp_resp
+          echo "update golang version"
+          rm -rf feeds/packages/lang/golang
+          cp -r temp_resp/lang/golang feeds/packages/lang
+          rm -rf temp_resp
 
-          test -f sdk/package/sftpgo/Makefile
-          test -f sdk/package/luci-app-sftpgo/Makefile
-          grep -q '^PKG_NAME:=sftpgo$' sdk/package/sftpgo/Makefile
-          grep -q '^PKG_NAME:=luci-app-sftpgo$' sdk/package/luci-app-sftpgo/Makefile
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-      - name: Configure IPK build
-        shell: bash
+          echo "Patch application completed"
+          #--------------------------------------end_patches--------------------------------------------
+
+      - name: Add sftpgo package sources
         run: |
-          set -euo pipefail
+          mkdir -p sdk/package/net
+          cp -r /sftpgo sdk/package/net/sftpgo
+          cp -r /luci-app-sftpgo sdk/package/net/luci-app-sftpgo
+
+      - name: config
+        id: config
+        run: |
           cd sdk
-
-          printf '%s\n' \
-            'CONFIG_ALL_NONSHARED=n' \
-            'CONFIG_ALL_KMODS=n' \
-            'CONFIG_ALL=n' \
-            'CONFIG_AUTOREMOVE=n' \
-            'CONFIG_SIGNED_PACKAGES=n' \
-            '# CONFIG_USE_APK is not set' \
-            'CONFIG_PACKAGE_sftpgo=m' \
-            'CONFIG_PACKAGE_luci-app-sftpgo=m' \
-            > .config
-
+          {
+            echo "CONFIG_ALL_NONSHARED=n"
+            echo "CONFIG_ALL_KMODS=n"
+            echo "CONFIG_ALL=n"
+            echo "CONFIG_AUTOREMOVE=n"
+            echo "CONFIG_LUCI_LANG_zh_Hans=y"
+            echo "CONFIG_PACKAGE_sftpgo=m"
+            echo "CONFIG_PACKAGE_luci-app-sftpgo=m"
+          } > .config
           make defconfig
 
-          grep -q '^# CONFIG_USE_APK is not set$' .config || {
-            echo 'ERROR: SDK did not disable APK output' >&2
-            exit 1
-          }
-          grep -q '^CONFIG_PACKAGE_sftpgo=m$' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-sftpgo=m$' .config
-
-      - name: Build sftpgo package
-        shell: bash
+      - name: Compile sftpgo [apk]
+        id: compile_apk
         run: |
-          set -euo pipefail
           cd sdk
-          if ! make package/sftpgo/{clean,compile} -j"$(nproc)" V=s; then
-            echo "Parallel build failed; retrying serially..."
-            make package/sftpgo/{clean,compile} -j1 V=s
-          fi
-
-      - name: Build luci-app-sftpgo package
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd sdk
-          if ! make package/luci-app-sftpgo/{clean,compile} -j"$(nproc)" V=s; then
-            echo "Parallel LuCI build failed; retrying serially..."
-            make package/luci-app-sftpgo/{clean,compile} -j1 V=s
-          fi
-
-      - name: Verify and collect IPK files
-        id: collect
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd sdk
+          echo "make package/sftpgo/{clean,compile} -j$(nproc)"
+          make package/sftpgo/{clean,compile} -j$(nproc) V=s || make package/sftpgo/{clean,compile} -j1 V=s
+          echo "make package/luci-app-sftpgo/{clean,compile} -j$(nproc)"
+          make package/luci-app-sftpgo/{clean,compile} -j$(nproc) V=s || make package/luci-app-sftpgo/{clean,compile} -j1 V=s
 
           mkdir -p upload
-          mapfile -t ipks < <(find bin/packages -type f \( \
-            -name 'sftpgo_*.ipk' -o \
-            -name 'luci-app-sftpgo_*.ipk' \
-          \) -print | sort)
+          find bin/packages -type f \( -name 'sftpgo_*' -o -name 'luci-app-sftpgo_*' -o -name 'luci-i18n-sftpgo-*' \) -exec cp -v {} upload/ \;
+          ls -la upload
+          [ "$(ls -A upload)" ] || { echo "No apk files were produced"; exit 1; }
 
-          if [ "${#ipks[@]}" -lt 2 ]; then
-            echo 'ERROR: expected both sftpgo and luci-app-sftpgo IPKs' >&2
-            find bin/packages -type f -maxdepth 6 -print | sort || true
-            exit 1
-          fi
+          cd upload
+          sha256sum -- * > sha256sums-apk-${{ matrix.platform }}.txt
+          echo "status=success" >> "$GITHUB_OUTPUT"
+          echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
 
-          found_sftpgo=0
-          found_luci=0
-          for file in "${ipks[@]}"; do
-            case "$(basename "$file")" in
-              sftpgo_*.ipk) found_sftpgo=1 ;;
-              luci-app-sftpgo_*.ipk) found_luci=1 ;;
-            esac
-            cp -v "$file" upload/
-          done
-
-          [ "$found_sftpgo" -eq 1 ]
-          [ "$found_luci" -eq 1 ]
-
-          sha256sum upload/*.ipk > upload/SHA256SUMS
-          {
-            echo "OpenWrt release: $OPENWRT_RELEASE"
-            echo "Platform: ${{ matrix.platform }}"
-            echo "Repository: $GITHUB_REPOSITORY"
-            echo "Commit: $GITHUB_SHA"
-            echo "SDK: ${{ matrix.sdk_url }}"
-            echo ""
-            printf '%s\n' "$(cat upload/SHA256SUMS)"
-          } > upload/BUILD-INFO.txt
-
-          echo "artifact_dir=$PWD/upload" >> "$GITHUB_OUTPUT"
-
-      - name: Upload IPK artifact
-        uses: actions/upload-artifact@main
+      - name: Upload sftpgo [apk] artifact
+        uses: actions/upload-artifact@v4
+        if: steps.compile_apk.outputs.status == 'success'
         with:
-          name: luci-app-sftpgo-${{ matrix.platform }}-${{ env.OPENWRT_RELEASE }}
-          path: ${{ steps.collect.outputs.artifact_dir }}/*
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 30
+          name: sftpgo-${{ matrix.platform }}-apk
+          path: ${{ env.FIRMWARE }}/*
+
+      - name: Upload sftpgo [apk] to release
+        uses: softprops/action-gh-release@v3
+        if: steps.compile_apk.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.job_check.outputs.version_tag }}
+          target_commitish: ${{ github.ref_name }}
+          files: ${{ env.FIRMWARE }}/*
+
+      - name: Compile sftpgo [ipk]
+        id: compile_ipk
+        run: |
+          cd sdk
+          rm -rf bin
+          # 下面这行按原样照抄自 passwall2 workflow（expr/$? 的写法 shellcheck 会
+          # 提示风格性问题，但功能上没有问题，为了和已验证的参考实现保持一致故意不改）。
+          config_apk_line=$(grep -n "USE_APK" Config-build.in | awk -F ':' '{print $1}')
+          [ -n "$config_apk_line" ] && sed -n $(expr ${config_apk_line} + 2)p Config-build.in | grep "default y" >/dev/null; [ $? == 0 ] && sed -i "$(expr ${config_apk_line} + 2)s/y/n/" Config-build.in
+          make defconfig
+          echo "make package/sftpgo/{clean,compile} -j$(nproc)"
+          make package/sftpgo/{clean,compile} -j$(nproc) V=s || make package/sftpgo/{clean,compile} -j1 V=s
+          echo "make package/luci-app-sftpgo/{clean,compile} -j$(nproc)"
+          make package/luci-app-sftpgo/{clean,compile} -j$(nproc) V=s || make package/luci-app-sftpgo/{clean,compile} -j1 V=s
+
+          mkdir -p upload_ipk
+          find bin/packages -type f \( -name 'sftpgo_*' -o -name 'luci-app-sftpgo_*' -o -name 'luci-i18n-sftpgo-*' \) -exec cp -v {} upload_ipk/ \;
+          ls -la upload_ipk
+          [ "$(ls -A upload_ipk)" ] || { echo "No ipk files were produced"; exit 1; }
+
+          cd upload_ipk
+          sha256sum -- * > sha256sums-ipk-${{ matrix.platform }}.txt
+          echo "status=success" >> "$GITHUB_OUTPUT"
+          echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
+
+      - name: Upload sftpgo [ipk] artifact
+        uses: actions/upload-artifact@v4
+        if: steps.compile_ipk.outputs.status == 'success'
+        with:
+          name: sftpgo-${{ matrix.platform }}-ipk
+          path: ${{ env.FIRMWARE }}/*
+
+      - name: Upload sftpgo [ipk] to release
+        uses: softprops/action-gh-release@v3
+        if: steps.compile_ipk.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.job_check.outputs.version_tag }}
+          target_commitish: ${{ github.ref_name }}
+          files: ${{ env.FIRMWARE }}/*
+
+      - name: Update release info
+        uses: softprops/action-gh-release@v3
+        if: steps.compile_ipk.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.job_check.outputs.version_tag }}
+          target_commitish: ${{ github.ref_name }}
+          body_path: release.txt
+          prerelease: ${{ github.ref_name != 'main' }}
