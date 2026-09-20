@@ -200,8 +200,8 @@ jobs:
       - name: Add sftpgo package sources
         run: |
           mkdir -p sdk/package/net
-          cp -r /sftpgo sdk/package/net/sftpgo
-          cp -r /luci-app-sftpgo sdk/package/net/luci-app-sftpgo
+          cp -r ./sftpgo sdk/package/net/sftpgo
+          cp -r ./luci-app-sftpgo sdk/package/net/luci-app-sftpgo
 
       - name: config
         id: config
