@@ -132,7 +132,7 @@ jobs:
             'CONFIG_ALL=n' \
             'CONFIG_AUTOREMOVE=n' \
             'CONFIG_SIGNED_PACKAGES=n' \
-            'CONFIG_USE_APK=n' \
+            '# CONFIG_USE_APK is not set' \
             'CONFIG_PACKAGE_sftpgo=m' \
             'CONFIG_PACKAGE_luci-app-sftpgo=m' \
             > .config
