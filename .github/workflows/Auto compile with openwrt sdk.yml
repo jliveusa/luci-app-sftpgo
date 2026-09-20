@@ -212,7 +212,7 @@ jobs:
           echo "artifact_dir=$PWD/upload" >> "$GITHUB_OUTPUT"
 
       - name: Upload IPK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@main
         with:
           name: luci-app-sftpgo-${{ matrix.platform }}-${{ env.OPENWRT_RELEASE }}
           path: ${{ steps.collect.outputs.artifact_dir }}/*
