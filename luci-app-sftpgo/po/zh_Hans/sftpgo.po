@@ -1,0 +1,260 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8"
+
+msgid "RUNNING"
+msgstr "运行中"
+
+msgid "NOT RUNNING"
+msgstr "未运行"
+
+msgid "Open WebAdmin"
+msgstr "打开管理面板"
+
+msgid "SFTP, FTP and WebDAV are all disabled (port 0) in sftpgo.json. Only the WebAdmin/REST API is reachable. Edit the bindings on the Native Configuration page to enable a transfer protocol."
+msgstr "sftpgo.json 里 SFTP、FTP、WebDAV 全部被禁用（端口 0），当前只有 WebAdmin/REST API 可访问。请到“原生配置”页面修改 bindings 以启用某个文件传输协议。"
+
+msgid "SUCCESS:"
+msgstr "成功："
+
+msgid "SFTPGo service restarted"
+msgstr "SFTPGo 服务已重启"
+
+msgid "ERROR:"
+msgstr "错误："
+
+msgid "SFTPGo"
+msgstr "SFTPGo"
+
+msgid "OpenWrt 只管理 SFTPGo 服务本身、日志和首次管理员引导。SFTP、FTP/FTPS、WebDAV、HTTPS、证书、数据库、OIDC、MFA、ACME、Plugins 等完整 SFTPGo 配置统一保存在原生 sftpgo.json 中。"
+msgstr "OpenWrt 仅管理 SFTPGo 服务本身、日志和首次管理员引导。SFTP、FTP/FTPS、WebDAV、HTTPS、证书、数据库、OIDC、MFA、ACME、Plugins 等完整 SFTPGo 配置统一保存在原生 sftpgo.json 中。"
+
+msgid "Checking status..."
+msgstr "正在检测状态..."
+
+msgid "Status check error"
+msgstr "状态检测出错"
+
+msgid "Native configuration: "
+msgstr "原生配置："
+
+msgid "Open Native Configuration (sftpgo.json)"
+msgstr "打开原生配置（sftpgo.json）"
+
+msgid "An administrator account was created automatically on first start. Please log in and change the password, then dismiss this notice:"
+msgstr "首次启动已自动创建管理员账号，请登录后尽快修改密码，然后关闭此提示："
+
+msgid "Username: "
+msgstr "用户名："
+
+msgid "Password: "
+msgstr "密码："
+
+msgid "I have saved it, dismiss"
+msgstr "已保存，关闭提示"
+
+msgid "Service"
+msgstr "服务"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "Enable the SFTPGo daemon. Protocols and listener ports are configured in the native JSON page."
+msgstr "启用 SFTPGo 守护进程。协议和监听端口统一在原生 JSON 页面中配置。"
+
+msgid "Delayed start (seconds)"
+msgstr "延迟启动（秒）"
+
+msgid "Configuration file"
+msgstr "配置文件"
+
+msgid "Configuration directory"
+msgstr "配置目录"
+
+msgid "The native SFTPGo configuration file is sftpgo.json inside this directory. The directory is kept in UCI for compatibility; edit the JSON rather than creating parallel UCI listener settings."
+msgstr "此目录中的原生 SFTPGo 配置文件为 sftpgo.json。配置目录继续保留在 UCI 中以兼容旧版本；协议监听等设置请直接编辑 JSON，不要再建立重复的 UCI 配置。"
+
+msgid "Restart service"
+msgstr "重启服务"
+
+msgid "Restart"
+msgstr "重启"
+
+msgid "First administrator"
+msgstr "首个管理员"
+
+msgid "Auto-create the first administrator"
+msgstr "自动创建首个管理员"
+
+msgid "This is an OpenWrt bootstrap helper. It takes effect only while no administrator exists; all normal SFTPGo configuration stays in sftpgo.json."
+msgstr "这是 OpenWrt 的首次引导辅助功能，仅在尚无管理员时生效；其他 SFTPGo 配置均保存在 sftpgo.json。"
+
+msgid "Administrator username"
+msgstr "管理员用户名"
+
+msgid "Administrator password"
+msgstr "管理员密码"
+
+msgid "Leave empty to generate a random password on first start."
+msgstr "留空则首次启动时自动生成随机密码。"
+
+msgid "Logging"
+msgstr "日志"
+
+msgid "Log level"
+msgstr "日志级别"
+
+msgid "Log file path"
+msgstr "日志文件路径"
+
+msgid "Log rotation size (MB)"
+msgstr "日志切割大小（MB）"
+
+msgid "Max old log files kept"
+msgstr "保留旧日志文件数"
+
+msgid "Max log age (days)"
+msgstr "日志最长保留天数"
+
+msgid "Compress rotated logs"
+msgstr "压缩切割后的日志"
+
+msgid "Loading logs..."
+msgstr "正在加载日志..."
+
+msgid "No sftpgo logs found."
+msgstr "未找到 sftpgo 日志。"
+
+msgid "Clearing..."
+msgstr "正在清除..."
+
+msgid "Logs cleared!"
+msgstr "日志已清除！"
+
+msgid "Failed to clear"
+msgstr "清除失败"
+
+msgid "Clear Logs"
+msgstr "清除日志"
+
+msgid "Failed to read logs: %s"
+msgstr "读取日志失败：%s"
+
+msgid "Refresh every 5 seconds."
+msgstr "每 5 秒自动刷新。"
+
+msgid "JSON syntax is valid. The file can be saved."
+msgstr "JSON 语法正确，可以保存。"
+
+msgid "JSON validation failed: "
+msgstr "JSON 校验失败："
+
+msgid "Unknown error"
+msgstr "未知错误"
+
+msgid "Save failed: "
+msgstr "保存失败："
+
+msgid "Configuration saved. Restart SFTPGo to apply it."
+msgstr "配置已保存。重启 SFTPGo 后生效。"
+
+msgid "Configuration was saved, but SFTPGo failed to restart. Check the log."
+msgstr "配置已保存，但 SFTPGo 重启失败，请检查日志。"
+
+msgid "Configuration saved and SFTPGo restarted successfully."
+msgstr "配置已保存，SFTPGo 已成功重启。"
+
+msgid "Configuration was saved, but restart failed: "
+msgstr "配置已保存，但重启失败："
+
+msgid "Configuration file: "
+msgstr "配置文件："
+
+msgid "Configuration reloaded from disk."
+msgstr "已从磁盘重新载入配置。"
+
+msgid "Restore failed: "
+msgstr "恢复失败："
+
+msgid "Backup does not exist"
+msgstr "备份不存在"
+
+msgid "Reset sftpgo.json to the packaged SFTPGo default? The current configuration will be backed up first."
+msgstr "将 sftpgo.json 恢复为软件包内置的 SFTPGo 默认配置吗？当前配置会先自动备份。"
+
+msgid "Reset failed: "
+msgstr "重置失败："
+
+msgid "Imported file into the editor. Validate before saving."
+msgstr "文件已导入编辑器，请先校验再保存。"
+
+msgid "Failed to read the selected file."
+msgstr "读取所选文件失败。"
+
+msgid "This is the native SFTPGo configuration file. All fields documented by SFTPGo remain available here, including TLS certificates, SSH host keys, ACME, OIDC, MFA, KMS, SMTP, database providers, protocol bindings, security policies and Plugins."
+msgstr "这里直接编辑 SFTPGo 原生配置文件。SFTPGo 文档中的全部字段都可以继续使用，包括 TLS 证书、SSH Host Key、ACME、OIDC、MFA、KMS、SMTP、数据库 provider、协议监听、安全策略和 Plugins。"
+
+msgid "Save operations keep up to three rolling backups: sftpgo.json.bak, .bak.1 and .bak.2. The current file is replaced atomically after JSON validation."
+msgstr "每次保存最多保留三份滚动备份：sftpgo.json.bak、.bak.1、.bak.2。JSON 校验通过后，才会安全替换当前配置文件，避免保存过程中产生不完整的配置文件。"
+
+msgid "Validate JSON"
+msgstr "校验 JSON"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Save & Restart"
+msgstr "保存并重启"
+
+msgid "Reload"
+msgstr "重新载入"
+
+msgid "Download JSON"
+msgstr "下载 JSON"
+
+msgid "Import JSON"
+msgstr "导入 JSON"
+
+msgid "Reset to SFTPGo Default"
+msgstr "恢复 SFTPGo 默认配置"
+
+msgid "Restore backup"
+msgstr "恢复备份"
+
+msgid "Restore .bak"
+msgstr "恢复 .bak"
+
+msgid "Restore .bak.1"
+msgstr "恢复 .bak.1"
+
+msgid "Restore .bak.2"
+msgstr "恢复 .bak.2"
+
+msgid "Native SFTPGo Configuration"
+msgstr "SFTPGo 原生配置"
+
+msgid "Configuration loaded successfully."
+msgstr "配置加载成功。"
+
+msgid "Current JSON is invalid: "
+msgstr "当前 JSON 无效："
+
+msgid "unknown error"
+msgstr "未知错误"
+
+msgid "SFTPGo is disabled. Enable it on the Basic Setting page."
+msgstr "SFTPGo 未启用，请在“服务设置”页面开启。"
+
+msgid "SFTPGo Service Not Running"
+msgstr "SFTPGo 服务未运行"
+
+msgid "SFTPGo WebAdmin"
+msgstr "SFTPGo WebAdmin"
+
+msgid "WebAdmin: "
+msgstr "WebAdmin："
+
+msgid "SFTP, FTP and WebDAV are all disabled (port 0) in sftpgo.json. Edit the bindings on the Native Configuration page to enable a transfer protocol."
+msgstr "sftpgo.json 里 SFTP、FTP、WebDAV 全部被禁用（端口 0）。请到“原生配置”页面修改 bindings 以启用某个文件传输协议。"
+
+msgid "The native sftpgo.json could not be parsed. Open the Native Configuration page to fix it."
+msgstr "原生 sftpgo.json 无法解析，请打开“SFTPGo 原生配置”页面修正。"
