@@ -218,6 +218,42 @@ jobs:
           } > .config
           make defconfig
 
+      - name: Compile sftpgo [apk]
+        id: compile_apk
+        run: |
+          cd sdk
+          echo "make package/sftpgo/{clean,compile} -j$(nproc)"
+          make package/sftpgo/{clean,compile} -j$(nproc) V=s || make package/sftpgo/{clean,compile} -j1 V=s
+          echo "make package/luci-app-sftpgo/{clean,compile} -j$(nproc)"
+          make package/luci-app-sftpgo/{clean,compile} -j$(nproc) V=s || make package/luci-app-sftpgo/{clean,compile} -j1 V=s
+
+          mkdir -p upload
+          find bin/packages -type f \( -name 'sftpgo_*' -o -name 'luci-app-sftpgo_*' -o -name 'luci-i18n-sftpgo-*' \) -exec cp -v {} upload/ \;
+          ls -la upload
+          [ "$(ls -A upload)" ] || { echo "No apk files were produced"; exit 1; }
+
+          cd upload
+          sha256sum -- * > sha256sums-apk-${{ matrix.platform }}.txt
+          echo "status=success" >> "$GITHUB_OUTPUT"
+          echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
+
+      - name: Upload sftpgo [apk] artifact
+        uses: actions/upload-artifact@v4
+        if: steps.compile_apk.outputs.status == 'success'
+        with:
+          name: sftpgo-${{ matrix.platform }}-apk
+          path: ${{ env.FIRMWARE }}/*
+
+      - name: Upload sftpgo [apk] to release
+        uses: softprops/action-gh-release@v3
+        if: steps.compile_apk.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.job_check.outputs.version_tag }}
+          target_commitish: ${{ github.ref_name }}
+          files: ${{ env.FIRMWARE }}/*
+
       - name: Compile sftpgo [ipk]
         id: compile_ipk
         run: |
