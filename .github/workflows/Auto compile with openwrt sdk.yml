@@ -1,0 +1,221 @@
+name: "Auto compile with openwrt sdk"
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "net/**"
+      - ".github/workflows/Auto compile with openwrt sdk.yml"
+  workflow_dispatch:
+  repository_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sftpgo-openwrt-sdk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: Asia/Shanghai
+  OPENWRT_RELEASE: "25.12.5"
+
+jobs:
+  build:
+    name: build (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86_64
+            sdk_url: https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/openwrt-sdk-25.12.5-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+          - platform: aarch64_generic
+            sdk_url: https://downloads.openwrt.org/releases/25.12.5/targets/rockchip/armv8/openwrt-sdk-25.12.5-rockchip-armv8_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+          - platform: aarch64_cortex-a53
+            sdk_url: https://downloads.openwrt.org/releases/25.12.5/targets/mediatek/filogic/openwrt-sdk-25.12.5-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install host dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gettext \
+            git \
+            libelf-dev \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-setuptools \
+            rsync \
+            unzip \
+            wget \
+            zstd \
+            file
+
+      - name: Download and unpack OpenWrt SDK
+        shell: bash
+        env:
+          SDK_URL: ${{ matrix.sdk_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p sdk
+          archive="${SDK_URL##*/}"
+          curl -fL --retry 5 --retry-delay 3 --retry-connrefused \
+            --connect-timeout 20 --max-time 900 \
+            -o "$archive" "$SDK_URL"
+
+          case "$archive" in
+            *.tar.zst)
+              tar --zstd -xf "$archive" -C sdk --strip-components=1
+              ;;
+            *.tar.xz)
+              tar -xJf "$archive" -C sdk --strip-components=1
+              ;;
+            *)
+              echo "Unsupported SDK archive: $archive" >&2
+              exit 1
+              ;;
+          esac
+
+          test -x sdk/scripts/feeds
+          test -f sdk/Config-build.in
+          test -f sdk/Makefile
+
+      - name: Prepare feeds and inject local packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          cd ..
+          test -f net/sftpgo/Makefile
+          test -f net/luci-app-sftpgo/Makefile
+
+          rm -rf sdk/package/sftpgo sdk/package/luci-app-sftpgo
+          mkdir -p sdk/package/sftpgo sdk/package/luci-app-sftpgo
+          cp -a net/sftpgo/. sdk/package/sftpgo/
+          cp -a net/luci-app-sftpgo/. sdk/package/luci-app-sftpgo/
+
+          test -f sdk/package/sftpgo/Makefile
+          test -f sdk/package/luci-app-sftpgo/Makefile
+          grep -q '^PKG_NAME:=sftpgo$' sdk/package/sftpgo/Makefile
+          grep -q '^PKG_NAME:=luci-app-sftpgo$' sdk/package/luci-app-sftpgo/Makefile
+
+      - name: Configure IPK build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk
+
+          printf '%s\n' \
+            'CONFIG_ALL_NONSHARED=n' \
+            'CONFIG_ALL_KMODS=n' \
+            'CONFIG_ALL=n' \
+            'CONFIG_AUTOREMOVE=n' \
+            'CONFIG_SIGNED_PACKAGES=n' \
+            'CONFIG_USE_APK=n' \
+            'CONFIG_PACKAGE_sftpgo=m' \
+            'CONFIG_PACKAGE_luci-app-sftpgo=m' \
+            > .config
+
+          make defconfig
+
+          grep -q '^# CONFIG_USE_APK is not set$' .config || {
+            echo 'ERROR: SDK did not disable APK output' >&2
+            exit 1
+          }
+          grep -q '^CONFIG_PACKAGE_sftpgo=m$' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-sftpgo=m$' .config
+
+      - name: Build sftpgo package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk
+          if ! make package/sftpgo/{clean,compile} -j"$(nproc)" V=s; then
+            echo "Parallel build failed; retrying serially..."
+            make package/sftpgo/{clean,compile} -j1 V=s
+          fi
+
+      - name: Build luci-app-sftpgo package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk
+          if ! make package/luci-app-sftpgo/{clean,compile} -j"$(nproc)" V=s; then
+            echo "Parallel LuCI build failed; retrying serially..."
+            make package/luci-app-sftpgo/{clean,compile} -j1 V=s
+          fi
+
+      - name: Verify and collect IPK files
+        id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk
+
+          mkdir -p upload
+          mapfile -t ipks < <(find bin/packages -type f \( \
+            -name 'sftpgo_*.ipk' -o \
+            -name 'luci-app-sftpgo_*.ipk' \
+          \) -print | sort)
+
+          if [ "${#ipks[@]}" -lt 2 ]; then
+            echo 'ERROR: expected both sftpgo and luci-app-sftpgo IPKs' >&2
+            find bin/packages -type f -maxdepth 6 -print | sort || true
+            exit 1
+          fi
+
+          found_sftpgo=0
+          found_luci=0
+          for file in "${ipks[@]}"; do
+            case "$(basename "$file")" in
+              sftpgo_*.ipk) found_sftpgo=1 ;;
+              luci-app-sftpgo_*.ipk) found_luci=1 ;;
+            esac
+            cp -v "$file" upload/
+          done
+
+          [ "$found_sftpgo" -eq 1 ]
+          [ "$found_luci" -eq 1 ]
+
+          sha256sum upload/*.ipk > upload/SHA256SUMS
+          {
+            echo "OpenWrt release: $OPENWRT_RELEASE"
+            echo "Platform: ${{ matrix.platform }}"
+            echo "Repository: $GITHUB_REPOSITORY"
+            echo "Commit: $GITHUB_SHA"
+            echo "SDK: ${{ matrix.sdk_url }}"
+            echo ""
+            printf '%s\n' "$(cat upload/SHA256SUMS)"
+          } > upload/BUILD-INFO.txt
+
+          echo "artifact_dir=$PWD/upload" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-sftpgo-${{ matrix.platform }}-${{ env.OPENWRT_RELEASE }}
+          path: ${{ steps.collect.outputs.artifact_dir }}/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
