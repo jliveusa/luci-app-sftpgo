@@ -1,0 +1,49 @@
+{
+  "admin/services/sftpgo": {
+    "title": "SFTPGo",
+    "order": 59,
+    "action": {
+      "type": "firstchild"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sftpgo"
+      ],
+      "uci": {
+        "sftpgo": true
+      }
+    }
+  },
+  "admin/services/sftpgo/sftpgo": {
+    "title": "概览",
+    "order": 10,
+    "action": {
+      "type": "view",
+      "path": "sftpgo/sftpgo"
+    }
+  },
+  "admin/services/sftpgo/config": {
+    "title": "服务设置",
+    "order": 20,
+    "action": {
+      "type": "view",
+      "path": "sftpgo/config"
+    }
+  },
+  "admin/services/sftpgo/log": {
+    "title": "日志",
+    "order": 40,
+    "action": {
+      "type": "view",
+      "path": "sftpgo/log"
+    }
+  },
+  "admin/services/sftpgo/native": {
+    "title": "原生配置",
+    "order": 30,
+    "action": {
+      "type": "view",
+      "path": "sftpgo/native"
+    }
+  }
+}
