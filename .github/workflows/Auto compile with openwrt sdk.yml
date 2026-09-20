@@ -6,7 +6,7 @@ on:
       - main
       - master
     paths:
-      - "net/**"
+      - "/**"
       - ".github/workflows/Auto compile with openwrt sdk.yml"
   workflow_dispatch:
   repository_dispatch:
