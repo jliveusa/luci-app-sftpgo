@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# 首次安装时创建运行所需目录并赋权，用户/组由 opkg (USERID) 在安装阶段创建。
+mkdir -p /etc/sftpgo /srv/sftpgo/data /srv/sftpgo/backups /var/log/sftpgo
+chown sftpgo:sftpgo /etc/sftpgo /srv/sftpgo /var/log/sftpgo 2>/dev/null
+
+# 让 procd 从首次安装/开机开始就注册 UCI trigger；即使 enabled=0，start 也只是空操作。
+/etc/init.d/sftpgo enable
+/etc/init.d/sftpgo start
+
+exit 0
