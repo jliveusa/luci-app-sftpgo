@@ -249,24 +249,13 @@ jobs:
         with:
           name: sftpgo-${{ matrix.platform }}-ipk
           path: ${{ env.FIRMWARE }}/*
-
+          
       - name: Upload sftpgo [ipk] to release
         uses: softprops/action-gh-release@v3
         if: steps.compile_ipk.outputs.status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ needs.job_check.outputs.version_tag }}
-          target_commitish: ${{ github.ref_name }}
+          tag_name: sftpgo
           files: ${{ env.FIRMWARE }}/*
 
-      - name: Update release info
-        uses: softprops/action-gh-release@v3
-        if: steps.compile_ipk.outputs.status == 'success'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.job_check.outputs.version_tag }}
-          target_commitish: ${{ github.ref_name }}
-          body_path: release.txt
-          prerelease: ${{ github.ref_name != 'main' }}
