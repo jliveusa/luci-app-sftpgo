@@ -107,13 +107,13 @@ jobs:
           ./scripts/feeds install -a
 
           cd ..
-          test -f net/sftpgo/Makefile
-          test -f net/luci-app-sftpgo/Makefile
+          test -f sftpgo/Makefile
+          test -f luci-app-sftpgo/Makefile
 
           rm -rf sdk/package/sftpgo sdk/package/luci-app-sftpgo
           mkdir -p sdk/package/sftpgo sdk/package/luci-app-sftpgo
-          cp -a net/sftpgo/. sdk/package/sftpgo/
-          cp -a net/luci-app-sftpgo/. sdk/package/luci-app-sftpgo/
+          cp -a sftpgo/. sdk/package/sftpgo/
+          cp -a luci-app-sftpgo/. sdk/package/luci-app-sftpgo/
 
           test -f sdk/package/sftpgo/Makefile
           test -f sdk/package/luci-app-sftpgo/Makefile
