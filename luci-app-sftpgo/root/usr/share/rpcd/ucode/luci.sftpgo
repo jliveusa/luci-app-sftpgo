@@ -1,0 +1,266 @@
+#!/usr/bin/ucode
+'use strict';
+
+import {
+	access,
+	chmod,
+	chown,
+	error,
+	mkdir,
+	popen,
+	readfile,
+	rename,
+	stat,
+	unlink,
+	writefile
+} from 'fs';
+const DEFAULT_JSON = '/usr/share/sftpgo/sftpgo.default.json';
+const CONFIG_DIR = '/etc/sftpgo';
+const CONFIG_FILE = 'sftpgo.json';
+const MAX_JSON_SIZE = 2 * 1024 * 1024;
+
+function get_config_path() {
+	return CONFIG_DIR + '/' + CONFIG_FILE;
+}
+
+function file_error(prefix) {
+	let msg = error();
+	return prefix + (msg ? ': ' + msg : '');
+}
+
+function safe_error_message(e) {
+	if (!e)
+		return 'unknown error';
+	if (type(e) == 'object') {
+		if (e.message)
+			return e.message;
+		return sprintf('%J', e);
+	}
+	return e;
+}
+
+function validate_json_text(content) {
+	if (type(content) != 'string')
+		return { valid: false, error: 'content must be a string' };
+	if (length(content) == 0)
+		return { valid: false, error: 'configuration is empty' };
+	if (length(content) > MAX_JSON_SIZE)
+		return { valid: false, error: 'configuration is larger than 2 MiB' };
+
+	try {
+		let doc = json(content);
+		if (type(doc) != 'object')
+			return { valid: false, error: 'configuration root must be a JSON object' };
+	} catch (e) {
+		return { valid: false, error: safe_error_message(e) };
+	}
+
+	return { valid: true };
+}
+
+function ensure_config_dir() {
+	const dir = CONFIG_DIR;
+	if (stat(dir) == null) {
+		try {
+			if (!mkdir(dir, 493) && stat(dir) == null)
+				return { ok: false, error: file_error('failed to create config directory') };
+		} catch (e) {
+			return { ok: false, error: safe_error_message(e) };
+		}
+	}
+	if (!chown(dir, 'sftpgo', 'sftpgo'))
+		return { ok: false, error: file_error('failed to set config directory ownership') };
+	return { ok: true };
+}
+
+function read_native_config() {
+	const path = get_config_path();
+	let content;
+
+	if (access(path)) {
+		content = readfile(path, MAX_JSON_SIZE + 1);
+		if (content == null)
+			return { exists: true, valid: false, path: path, default_path: DEFAULT_JSON, content: '', error: file_error('failed to read sftpgo.json'), source: 'config' };
+	} else {
+		if (!access(DEFAULT_JSON))
+			return { exists: false, valid: false, path: path, default_path: DEFAULT_JSON, content: '', error: 'sftpgo.json and default template are both missing' };
+		content = readfile(DEFAULT_JSON, MAX_JSON_SIZE + 1);
+		if (content == null)
+			return { exists: false, valid: false, path: path, default_path: DEFAULT_JSON, content: '', error: file_error('failed to read default configuration'), source: 'default' };
+	}
+
+	let check = validate_json_text(content);
+	return {
+		exists: access(path),
+		valid: check.valid,
+		path: path,
+		default_path: DEFAULT_JSON,
+		content: content,
+		error: check.valid ? null : check.error,
+		source: access(path) ? 'config' : 'default'
+	};
+}
+
+function rotate_backups(path) {
+	const bak = path + '.bak';
+	const bak1 = path + '.bak.1';
+	const bak2 = path + '.bak.2';
+
+	if (access(bak2) && !unlink(bak2))
+		return { ok: false, error: file_error('failed to remove old backup') };
+	if (access(bak1) && !rename(bak1, bak2))
+		return { ok: false, error: file_error('failed to rotate backup 1') };
+	if (access(bak) && !rename(bak, bak1))
+		return { ok: false, error: file_error('failed to rotate backup 0') };
+	if (access(path) && !rename(path, bak))
+		return { ok: false, error: file_error('failed to create configuration backup') };
+	return { ok: true };
+}
+
+function save_native_config(content) {
+	let check = validate_json_text(content);
+	if (!check.valid)
+		return { ok: false, valid: false, error: check.error };
+
+	let dir_result = ensure_config_dir();
+	if (!dir_result.ok)
+		return dir_result;
+
+	const path = get_config_path();
+	const tmp = path + '.tmp';
+
+	if (writefile(tmp, content) == null)
+		return { ok: false, error: file_error('failed to write temporary configuration') };
+	if (!chmod(tmp, 384) || !chown(tmp, 'sftpgo', 'sftpgo')) {
+		unlink(tmp);
+		return { ok: false, error: file_error('failed to set configuration permissions') };
+	}
+
+	let rotated = rotate_backups(path);
+	if (!rotated.ok) {
+		unlink(tmp);
+		return rotated;
+	}
+
+	if (!rename(tmp, path)) {
+		if (!access(path) && access(path + '.bak'))
+			rename(path + '.bak', path);
+		unlink(tmp);
+		return { ok: false, error: file_error('failed to replace configuration') };
+	}
+
+	chmod(path, 384);
+	chown(path, 'sftpgo', 'sftpgo');
+	return { ok: true, valid: true, path: path, bytes: length(content) };
+}
+
+function restore_native_config(slot) {
+	let suffix;
+	switch (slot) {
+	case 'bak': suffix = '.bak'; break;
+	case 'bak1': suffix = '.bak.1'; break;
+	case 'bak2': suffix = '.bak.2'; break;
+	default: return { ok: false, error: 'invalid backup slot' };
+	}
+
+	const source = get_config_path() + suffix;
+	if (!access(source))
+		return { ok: false, error: 'backup does not exist' };
+	let content = readfile(source, MAX_JSON_SIZE + 1);
+	if (content == null)
+		return { ok: false, error: file_error('failed to read backup') };
+	let check = validate_json_text(content);
+	if (!check.valid)
+		return { ok: false, error: 'backup JSON is invalid: ' + check.error };
+	return save_native_config(content);
+}
+
+function reset_native_config() {
+	if (!access(DEFAULT_JSON))
+		return { ok: false, error: 'default SFTPGo JSON template is missing' };
+	let content = readfile(DEFAULT_JSON, MAX_JSON_SIZE + 1);
+	if (content == null)
+		return { ok: false, error: file_error('failed to read default template') };
+	return save_native_config(content);
+}
+
+function get_config_summary() {
+	let info = read_native_config();
+	if (!info.content)
+		return { valid: false, path: info.path, error: info.error || 'configuration unavailable' };
+
+	let doc;
+	try {
+		doc = json(info.content);
+	} catch (e) {
+		return { valid: false, path: info.path, error: safe_error_message(e) };
+	}
+
+	let http_binding = (doc.httpd && type(doc.httpd) == 'object' && type(doc.httpd.bindings) == 'array' && doc.httpd.bindings[0]) || {};
+	let sftp_binding = (doc.sftpd && type(doc.sftpd) == 'object' && type(doc.sftpd.bindings) == 'array' && doc.sftpd.bindings[0]) || {};
+	let ftp_binding = (doc.ftpd && type(doc.ftpd) == 'object' && type(doc.ftpd.bindings) == 'array' && doc.ftpd.bindings[0]) || {};
+	let dav_binding = (doc.webdavd && type(doc.webdavd) == 'object' && type(doc.webdavd.bindings) == 'array' && doc.webdavd.bindings[0]) || {};
+
+	return {
+		valid: true,
+		path: info.path,
+		config_exists: info.exists,
+		httpd_port: http_binding.port || 0,
+		httpd_address: http_binding.address || '',
+		httpd_https: !!http_binding.enable_https,
+		sftp_port: sftp_binding.port || 0,
+		ftp_port: ftp_binding.port || 0,
+		webdav_port: dav_binding.port || 0,
+		no_protocol_enabled: !(sftp_binding.port || ftp_binding.port || dav_binding.port),
+		data_provider: (doc.data_provider && doc.data_provider.driver) || ''
+	};
+}
+
+function get_current_version() {
+	if (!access('/usr/bin/sftpgo'))
+		return null;
+	const fd = popen('/usr/bin/sftpgo -v 2>&1');
+	if (!fd)
+		return null;
+	let out = trim(fd.read('all'));
+	fd.close();
+	if (!out)
+		return null;
+	let m = match(out, /[0-9]+\.[0-9]+\.[0-9]+[^\s]*/);
+	return m ? m[0] : out;
+}
+
+const methods = {
+	get_ver: {
+		call: function () {
+			let v = get_current_version();
+			return v ? { ver: { version: v } } : { ver: {}, error: 'sftpgo not found or version check failed' };
+		}
+	},
+	get_native_config: {
+		call: function () { return read_native_config(); }
+	},
+	validate_native_config: {
+		args: { content: '' },
+		call: function (request) { return validate_json_text(request && request.args && request.args.content); }
+	},
+	save_native_config: {
+		args: { content: '' },
+		call: function (request) { return save_native_config(request && request.args && request.args.content); }
+	},
+	restore_native_config: {
+		args: { slot: '' },
+		call: function (request) { return restore_native_config(request && request.args && request.args.slot); }
+	},
+	reset_native_config: {
+		call: function () { return reset_native_config(); }
+	},
+	get_config_summary: {
+		call: function () { return get_config_summary(); }
+	}
+};
+
+// rpcd-ucode requires the script to return a top-level object signature.
+return {
+	"luci.sftpgo": methods
+};
