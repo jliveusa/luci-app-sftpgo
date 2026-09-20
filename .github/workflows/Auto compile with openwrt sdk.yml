@@ -40,7 +40,7 @@ on:
       force_release:
         description: 'Publish a release even if this version was already released'
         required: false
-        default: 'false'
+        default: 'true'
   push:
     branches: [ main ]
     paths:
